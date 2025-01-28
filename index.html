@@ -1,0 +1,385 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta name="referrer" content="no-referrer-when-downgrade">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Sound Player</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f0f0f0;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    body.dark-mode {
+      background-color: #222;
+      color: #fff;
+    }
+
+    .container {
+      text-align: center;
+      padding: 20px;
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      transition: background-color 0.3s, box-shadow 0.3s;
+    }
+
+    .dark-mode .container {
+      background-color: #333;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+    }
+
+    #uploadButton {
+      display: none;
+    }
+
+    #uploadLabel {
+      display: inline-block;
+      padding: 10px 20px;
+      background-color: #4CAF50;
+      color: white;
+      cursor: pointer;
+      border-radius: 5px;
+      transition: background-color 0.3s;
+    }
+
+    #uploadLabel:hover {
+      background-color: #45a049;
+    }
+
+    #playButton {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background-color: #008CBA;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+      transition: background-color 0.3s;
+    }
+
+    #playButton:hover {
+      background-color: #007B9A;
+    }
+
+    #playButton:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+
+    #waveform {
+      width: 100%;
+      height: 100px;
+      background-color: #eee;
+      margin-top: 20px;
+      transition: background-color 0.3s;
+    }
+
+    .dark-mode #waveform {
+      background-color: #444;
+    }
+
+    #colorVisualization {
+      width: 320px;
+      height: 320px;
+      margin: 20px auto;
+      display: grid;
+      background-color: #000;
+    }
+
+    .color-cell {
+      width: 100%;
+      height: 100%;
+    }
+
+    #toggleVisualization,
+    #changeDisplayAmount,
+    #toggleDarkMode {
+      margin-top: 10px;
+      padding: 5px 10px;
+      background-color: #ff9800;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+      transition: background-color 0.3s;
+    }
+
+    #toggleVisualization:hover,
+    #changeDisplayAmount:hover,
+    #toggleDarkMode:hover {
+      background-color: #e68a00;
+    }
+
+    #displayAmount {
+      margin-top: 10px;
+      padding: 5px;
+      width: 50px;
+    }
+
+    .dark-mode #displayAmount {
+      background-color: #444;
+      color: #fff;
+      border: 1px solid #666;
+    }
+  </style>
+
+<script>
+    (function() {
+      window.addEventListener("error", (event) => {
+        console.log("ERROR EVENT", event);
+        window.parent.postMessage({
+            type: "IFRAME_ERROR_EVENT",
+            message: event.message,
+            filename: event.filename,
+            error: event.error,
+            lineno: event.lineno,
+            colno: event.colno,
+          },
+          "*"
+        );
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        window.parent.postMessage(
+          {
+            type: 'IFRAME_UNHANDLED_REJECTION_EVENT',
+            message: event.reason?.message || String(event.reason),
+            stack: event.reason?.stack || null,
+            reason: event.reason,
+          },
+          '*'
+        )
+      })
+    })()
+  </script></head>
+
+<body>
+<script>
+ (function() {
+      const targetNode = document.body;
+      const config = {
+        childList: true,
+        subtree: true,
+      };
+      const callback = (mutationsList, observer) => {
+        for (const mutation of mutationsList) {
+          if (mutation.type === 'childList') {
+            mutation.addedNodes.forEach(node => {
+              if (node.tagName === 'A') {
+                node.addEventListener('click', (evt) => {
+                  evt.preventDefault();
+                  window.parent.postMessage({
+                    type: 'REQ_REDIRECT_EVENT',
+                    href: node.href,
+                    target: node.target,
+                  }, '*')
+                })
+              }
+            })
+          }
+        }
+      };
+      const observer = new MutationObserver(callback);
+      observer.observe(targetNode, config);
+    })();
+</script>
+
+  <div class="container">
+    <h1>Data Sound Player</h1>
+    <p>Upload any file and listen to its raw data as audio!</p>
+    <input type="file" id="uploadButton" accept="*/*">
+    <label for="uploadButton" id="uploadLabel">Choose File</label>
+    <button id="playButton" disabled="">Play Sound</button>
+    <div id="waveform"></div>
+    <div id="colorVisualization"></div>
+    <button id="toggleVisualization">Toggle Color Visualization</button>
+    <input type="number" id="displayAmount" value="100" min="1" max="1000">
+    <button id="changeDisplayAmount">Change Display Amount</button>
+    <button id="toggleDarkMode">Toggle Dark Mode</button>
+  </div>
+  <script>
+    (function() {
+      let configuration = {
+        sampleRate: 44100, // Audio sample rate
+        maxPlayTime: 30, // Maximum play time in seconds
+        waveformColor: '#4CAF50', // Color of the waveform
+        visualizationEnabled: true, // Whether color visualization is enabled
+        gridSize: 10, // Size of the color visualization grid
+        displayAmount: 100, // Number of bytes to display at once
+        minGridSize: 4, // Minimum grid size
+        maxGridSize: 64, // Maximum grid size
+        darkMode: false, // Whether dark mode is enabled
+        bytesPerSecond: 44100, // Number of bytes processed per second in audio playback
+      };
+      let audioContext;
+      let audioBuffer;
+      let byteArray;
+      let visualizationInterval;
+      document.getElementById('uploadButton').addEventListener('change', handleFileUpload);
+      document.getElementById('playButton').addEventListener('click', playSound);
+      document.getElementById('toggleVisualization').addEventListener('click', toggleVisualization);
+      document.getElementById('changeDisplayAmount').addEventListener('click', changeDisplayAmount);
+      document.getElementById('toggleDarkMode').addEventListener('click', toggleDarkMode);
+
+      function handleFileUpload(event) {
+        const file = event.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const arrayBuffer = e.target.result;
+          byteArray = new Uint8Array(arrayBuffer);
+          audioContext = new(window.AudioContext || window.webkitAudioContext)();
+          audioBuffer = audioContext.createBuffer(1, byteArray.length, configuration.sampleRate);
+          const nowBuffering = audioBuffer.getChannelData(0);
+          for (let i = 0; i < byteArray.length; i++) {
+            nowBuffering[i] = (byteArray[i] - 128) / 128.0;
+          }
+          document.getElementById('playButton').disabled = false;
+          drawWaveform(nowBuffering);
+        };
+        reader.readAsArrayBuffer(file);
+      }
+
+      function playSound() {
+        if (audioBuffer) {
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
+          source.start(0);
+          const startTime = audioContext.currentTime;
+          // Stop after maxPlayTime seconds
+          setTimeout(() => {
+            source.stop();
+          }, configuration.maxPlayTime * 1000);
+          // Start color visualization
+          if (configuration.visualizationEnabled) {
+            startColorVisualization(startTime);
+          }
+        }
+      }
+
+      function drawWaveform(buffer) {
+        const canvas = document.createElement('canvas');
+        canvas.width = document.getElementById('waveform').clientWidth;
+        canvas.height = document.getElementById('waveform').clientHeight;
+        document.getElementById('waveform').innerHTML = '';
+        document.getElementById('waveform').appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = configuration.waveformColor;
+        const step = Math.ceil(buffer.length / canvas.width);
+        const amp = canvas.height / 2;
+        for (let i = 0; i < canvas.width; i++) {
+          let min = 1.0;
+          let max = -1.0;
+          for (let j = 0; j < step; j++) {
+            const datum = buffer[(i * step) + j];
+            if (datum < min) min = datum;
+            if (datum > max) max = datum;
+          }
+          ctx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp));
+        }
+      }
+
+      function initializeColorGrid() {
+        const colorVisualization = document.getElementById('colorVisualization');
+        colorVisualization.innerHTML = '';
+        colorVisualization.style.gridTemplateColumns = `repeat(${configuration.gridSize}, 1fr)`;
+        colorVisualization.style.gridTemplateRows = `repeat(${configuration.gridSize}, 1fr)`;
+        for (let i = 0; i < configuration.gridSize * configuration.gridSize; i++) {
+          const cell = document.createElement('div');
+          cell.className = 'color-cell';
+          colorVisualization.appendChild(cell);
+        }
+        // Set the size of the visualization container
+        const cellSize = 320 / configuration.gridSize;
+        colorVisualization.style.width = `${cellSize * configuration.gridSize}px`;
+        colorVisualization.style.height = `${cellSize * configuration.gridSize}px`;
+      }
+
+      function calculateGridSize(displayAmount) {
+        // Calculate the grid size based on the display amount
+        let gridSize = Math.floor(Math.sqrt(displayAmount / 3));
+        // Ensure the grid size is within the allowed range
+        gridSize = Math.max(configuration.minGridSize, Math.min(gridSize, configuration.maxGridSize));
+        return gridSize;
+      }
+
+      function startColorVisualization(startTime) {
+        initializeColorGrid();
+        const cells = document.querySelectorAll('.color-cell');
+        let lastUpdateTime = startTime;
+
+        function updateVisualization() {
+          const currentTime = audioContext.currentTime;
+          const elapsedTime = currentTime - lastUpdateTime;
+          const bytesToProcess = Math.floor(elapsedTime * configuration.bytesPerSecond);
+          const index = Math.floor((currentTime - startTime) * configuration.bytesPerSecond);
+          if (index >= byteArray.length) {
+            cancelAnimationFrame(visualizationInterval);
+            return;
+          }
+          for (let i = 0; i < cells.length; i++) {
+            const r = byteArray[index + i * 3] || 0;
+            const g = byteArray[index + i * 3 + 1] || 0;
+            const b = byteArray[index + i * 3 + 2] || 0;
+            cells[i].style.backgroundColor = `rgb(${r},${g},${b})`;
+          }
+          lastUpdateTime = currentTime;
+          visualizationInterval = requestAnimationFrame(updateVisualization);
+        }
+        visualizationInterval = requestAnimationFrame(updateVisualization);
+      }
+
+      function toggleVisualization() {
+        configuration.visualizationEnabled = !configuration.visualizationEnabled;
+        if (configuration.visualizationEnabled) {
+          document.getElementById('colorVisualization').style.display = 'grid';
+          document.getElementById('toggleVisualization').textContent = 'Disable Color Visualization';
+          if (byteArray && audioContext) {
+            startColorVisualization(audioContext.currentTime);
+          }
+        } else {
+          document.getElementById('colorVisualization').style.display = 'none';
+          document.getElementById('toggleVisualization').textContent = 'Enable Color Visualization';
+          cancelAnimationFrame(visualizationInterval);
+        }
+      }
+
+      function changeDisplayAmount() {
+        const newAmount = parseInt(document.getElementById('displayAmount').value);
+        if (newAmount >= 1 && newAmount <= 1000) {
+          configuration.displayAmount = newAmount;
+          configuration.gridSize = calculateGridSize(newAmount);
+          if (configuration.visualizationEnabled && byteArray && audioContext) {
+            cancelAnimationFrame(visualizationInterval);
+            initializeColorGrid();
+            startColorVisualization(audioContext.currentTime);
+          }
+        } else {
+          alert('Please enter a number between 1 and 1000.');
+        }
+      }
+
+      function toggleDarkMode() {
+        configuration.darkMode = !configuration.darkMode;
+        document.body.classList.toggle('dark-mode');
+        const darkModeButton = document.getElementById('toggleDarkMode');
+        darkModeButton.textContent = configuration.darkMode ? 'Disable Dark Mode' : 'Enable Dark Mode';
+      }
+      // Initialize the color grid when the page loads
+      initializeColorGrid();
+    })();
+  </script>
+
+</body>
+
+</html>
